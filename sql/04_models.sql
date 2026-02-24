@@ -151,8 +151,93 @@ GROUP BY user_id, session_id
 ORDER BY user_id, session_id;
 
 
+CREATE OR REPLACE VIEW v_session_conversion AS
+WITH flagged AS (
+    SELECT
+        user_id,
+        ts,
+        event_name,
+    CASE
+        WHEN LAG(ts) OVER (PARTITION BY user_id ORDER BY ts) IS NULL THEN 1
+        WHEN ts - LAG(ts) OVER (PARTITION BY user_id ORDER BY ts) > INTERVAL '30 minutes' THEN 1
+        ELSE 0
+    END AS is_new_session
+  FROM events
+),
+event_sessions AS (
+    SELECT
+        user_id,
+        ts,
+        event_name,
+        SUM(is_new_session) OVER (PARTITION BY user_id ORDER BY ts) AS session_id
+    FROM flagged
+),
+session_flags AS (
+    SELECT
+        user_id,
+        session_id,
+        MAX((event_name='view_product')::int) as viewed_in_session,
+        MAX((event_name='purchase')::int) as purchased_in_session
+    FROM event_sessions
+    GROUP BY (user_id,session_id)
+)
+SELECT
+    s.user_id,
+    s.session_id,
+    s.session_start,
+    s.session_end,
+    s.events_in_session,
+    s.session_duration_seconds,
+    COALESCE(f.viewed_in_session,0) as viewed_in_session,
+    COALESCE(f.purchased_in_session,0) as purchased_in_session,
+    COALESCE(f.purchased_in_session,0) as converted_in_session
+FROM v_sessions s
+LEFT JOIN session_flags f
+ON s.user_id = f.user_id
+AND s.session_id = f.session_id;
 
 
+SELECT 
+    u.acquisition_channel,
+    COUNT(*) as sessions,
+    SUM(v.converted_in_session) as converted_sessions,
+    ROUND(SUM(v.converted_in_session)::numeric/NULLIF(COUNT(*),0),4) as conv_per_session,
+    ROUND(SUM(v.converted_in_session)::numeric/NULLIF(SUM(v.viewed_in_session),0),4) as conv_given_view
+FROM v_session_conversion v 
+JOIN users u
+ON v.user_id = u.user_id
+GROUP BY u.acquisition_channel
+ORDER BY sessions DESC;
+
+SELECT 
+    DATE(session_start) as day,
+    COUNT(*) as sessions,
+    SUM(converted_in_session) as converted_sessions,
+    ROUND(SUM(converted_in_session)::numeric/NULLIF(COUNT(*),0),4) as conv_per_session
+FROM v_session_conversion
+GROUP BY 1
+ORDER BY 1;
+
+WITH daily as (
+    SELECT
+        DATE(session_start) as day,
+        COUNT(*) as sessions,
+        SUM(converted_in_session) as converted_sessions
+    FROM v_session_conversion
+    GROUP BY 1
+)
+SELECT
+    day,
+    sessions,
+    converted_sessions,
+    ROUND(converted_sessions::numeric/NULLIF(sessions,0),4) as conv_per_session,
+    ROUND(
+        SUM(converted_sessions) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)::numeric
+        / NULLIF(SUM(sessions) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 0),
+        4
+    ) AS conv_7d_rolling
+FROM daily
+ORDER BY day;
 
 --tests
 
@@ -172,6 +257,8 @@ SELECT * FROM v_retention_d1 WHERE retained_d1 > cohort_size;
 
 SELECT * FROM v_retention_d7 ORDER BY signup_day;
 
+SELECT * FROM v_retention_summary ORDER BY signup_day;
+
 SELECT * FROM v_sessions ORDER BY user_id, session_id;
 SELECT
   user_id,
@@ -180,3 +267,9 @@ SELECT
 FROM v_sessions
 GROUP BY 1
 ORDER BY sessions DESC;
+
+SELECT * FROM v_session_conversion ORDER BY user_id, session_id;
+
+SELECT COUNT(*) FROM users;
+SELECT COUNT(*) FROM events;
+SELECT COUNT(*) FROM orders;
