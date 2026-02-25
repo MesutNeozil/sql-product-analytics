@@ -119,6 +119,11 @@ FROM joined
 GROUP BY 1
 ORDER BY 1;
 
+SELECT
+  MIN(d1_retention) AS d1_min, MAX(d1_retention) AS d1_max,
+  MIN(d7_retention) AS d7_min, MAX(d7_retention) AS d7_max
+FROM v_retention_summary;
+
 CREATE OR REPLACE VIEW v_sessions AS
 WITH flagged AS (
     SELECT
@@ -239,6 +244,29 @@ SELECT
 FROM daily
 ORDER BY day;
 
+WITH daily AS (
+  SELECT DATE(session_start) AS day,
+         COUNT(*) AS sessions,
+         SUM(converted_in_session) AS converted_sessions
+  FROM v_session_conversion
+  GROUP BY 1
+),
+rolling AS (
+  SELECT
+    day,
+    ROUND(
+      SUM(converted_sessions) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)::numeric
+      / NULLIF(SUM(sessions) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 0),
+      4
+    ) AS conv_7d_rolling
+  FROM daily
+)
+SELECT *
+FROM rolling
+WHERE conv_7d_rolling = (SELECT MIN(conv_7d_rolling) FROM rolling)
+   OR conv_7d_rolling = (SELECT MAX(conv_7d_rolling) FROM rolling)
+ORDER BY day;
+
 --tests
 
 SELECT * FROM v_daily_kpis ORDER BY day;
@@ -258,6 +286,10 @@ SELECT * FROM v_retention_d1 WHERE retained_d1 > cohort_size;
 SELECT * FROM v_retention_d7 ORDER BY signup_day;
 
 SELECT * FROM v_retention_summary ORDER BY signup_day;
+SELECT *
+FROM v_retention_summary
+WHERE signup_day <= CURRENT_DATE - INTERVAL '30 day'
+ORDER BY signup_day;
 
 SELECT * FROM v_sessions ORDER BY user_id, session_id;
 SELECT
