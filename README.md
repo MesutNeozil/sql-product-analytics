@@ -45,17 +45,17 @@ Notes:
 ## Key Results
 
 ### Acquisition channel conversion (session-level)
-![Conversion by acquisition channel](docs/screenshots/channel_conversion.png)
+![Conversion by acquisition channel](results/screenshots/channel_conversion.png)
 
 **Takeaway:** Referral converts highest (8.88% per session) and TikTok lowest (4.48%).
 
 ### Cohort retention range (D1 / D7)
-![Retention min/max](docs/screenshots/retention_summary.png)
+![Retention min/max](results/screenshots/retention_summary.png)
 
 **Takeaway:** D1 ranges 0.00–0.75; D7 ranges 0.00–0.1628 (small-cohort and recency effects apply).
 
 ### 7-day rolling conversion range
-![Rolling conversion min/max](docs/screenshots/rolling_conversion.png)
+![Rolling conversion min/max](results/screenshots/rolling_conversion.png)
 
 **Takeaway:** 7-day rolling conversion ranges 0.0422–0.5000; early windows are more volatile due to fewer sessions.
 ## Data Quality Checks
